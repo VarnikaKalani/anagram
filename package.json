@@ -1,0 +1,33 @@
+{
+  "name": "pastel-anagram-duel",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "ws:dev": "tsx watch server/ws-server.ts",
+    "ws:start": "tsx server/ws-server.ts",
+    "dev:all": "concurrently \"npm run dev\" \"npm run ws:dev\""
+  },
+  "dependencies": {
+    "framer-motion": "^11.11.17",
+    "next": "^14.2.24",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/ws": "^8.5.13",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.2",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.14",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

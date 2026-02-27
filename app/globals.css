@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: #111111;
+  background: #f5f5f5;
+  font-family: "Helvetica Neue", Arial, "Segoe UI", sans-serif;
+}
+
+.panel-glass {
+  @apply rounded-2xl border border-slate-300 bg-white shadow-soft;
+}
+
+.pill {
+  @apply rounded-full px-4 py-2 text-sm font-semibold transition-transform duration-150 active:scale-[0.98];
+}
+
+.pill-primary {
+  @apply border border-black bg-black text-white;
+}
+
+.pill-secondary {
+  @apply border border-slate-400 bg-white text-slate-700;
+}
+
+.ring-value {
+  text-shadow: none;
+}
+
+.tile-tap {
+  transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+}
+
+.tile-tap:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-pop-in {
+  animation: pop-in 240ms ease;
+}
+
+@keyframes confetti-rise {
+  from {
+    transform: translateY(0) scale(1);
+    opacity: 0.95;
+  }
+  to {
+    transform: translateY(-40px) scale(0.4);
+    opacity: 0;
+  }
+}
+
+.confetti-dot {
+  animation: confetti-rise 720ms ease-out forwards;
+}
