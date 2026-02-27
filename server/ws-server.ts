@@ -428,7 +428,7 @@ function handleSocketClose(ws: WebSocket): void {
     emitRoomState(room, `${player.name} disconnected.`);
   }
 
-  if (room.players.every((entry) => !entry.connected) && room.status !== "playing") {
+  if (room.players.every((entry) => !entry.connected)) {
     clearRoomTimers(room);
     rooms.delete(room.code);
   }
