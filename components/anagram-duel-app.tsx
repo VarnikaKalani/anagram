@@ -137,6 +137,17 @@ export default function AnagramDuelApp() {
     return true;
   }, []);
 
+  const sendEventWithFeedback = useCallback(
+    (event: ClientEvent, fallbackMessage = "Unable to reach game server. Please try again.") => {
+      const sent = sendEvent(event);
+      if (!sent) {
+        pushToast(fallbackMessage, "error");
+      }
+      return sent;
+    },
+    [pushToast, sendEvent]
+  );
+
   const handleServerEvent = useCallback(
     (event: ServerEvent) => {
       switch (event.type) {
@@ -317,13 +328,16 @@ export default function AnagramDuelApp() {
           pushToast("You already found that word.", "error");
           return;
         }
-        sendEvent({
-          type: "word:submit",
-          payload: {
-            code: room.code,
-            word
-          }
-        });
+        sendEventWithFeedback(
+          {
+            type: "word:submit",
+            payload: {
+              code: room.code,
+              word
+            }
+          },
+          "Unable to submit word. Check server connection and try again."
+        );
         return;
       }
 
@@ -350,7 +364,7 @@ export default function AnagramDuelApp() {
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [myPlayer, pushToast, room, selectedIndices, sendEvent]);
+  }, [myPlayer, pushToast, room, selectedIndices, sendEventWithFeedback]);
 
   const createRoom = () => {
     const cleanName = nameInput.trim().slice(0, 24);
@@ -359,10 +373,13 @@ export default function AnagramDuelApp() {
       return;
     }
     window.localStorage.setItem(PLAYER_NAME_KEY, cleanName);
-    sendEvent({
-      type: "room:create",
-      payload: { name: cleanName, mode: selectedMode }
-    });
+    sendEventWithFeedback(
+      {
+        type: "room:create",
+        payload: { name: cleanName, mode: selectedMode }
+      },
+      "Unable to create room. Check server connection and try again."
+    );
   };
 
   const joinRoom = () => {
@@ -377,21 +394,27 @@ export default function AnagramDuelApp() {
       return;
     }
     window.localStorage.setItem(PLAYER_NAME_KEY, cleanName);
-    sendEvent({
-      type: "room:join",
-      payload: {
-        code: cleanCode,
-        name: cleanName
-      }
-    });
+    sendEventWithFeedback(
+      {
+        type: "room:join",
+        payload: {
+          code: cleanCode,
+          name: cleanName
+        }
+      },
+      "Unable to join room. Check server connection and try again."
+    );
   };
 
   const startRound = () => {
     if (!room) return;
-    sendEvent({
-      type: "game:start",
-      payload: { code: room.code }
-    });
+    sendEventWithFeedback(
+      {
+        type: "game:start",
+        payload: { code: room.code }
+      },
+      "Unable to start round. Check server connection and try again."
+    );
   };
 
   const tapLetter = (index: number) => {
@@ -421,13 +444,16 @@ export default function AnagramDuelApp() {
       pushToast("You already found that word.", "error");
       return;
     }
-    sendEvent({
-      type: "word:submit",
-      payload: {
-        code: room.code,
-        word
-      }
-    });
+    sendEventWithFeedback(
+      {
+        type: "word:submit",
+        payload: {
+          code: room.code,
+          word
+        }
+      },
+      "Unable to submit word. Check server connection and try again."
+    );
   };
 
   const copyCode = async () => {
@@ -442,18 +468,24 @@ export default function AnagramDuelApp() {
 
   const rematch = () => {
     if (!room) return;
-    sendEvent({
-      type: "game:start",
-      payload: { code: room.code }
-    });
+    sendEventWithFeedback(
+      {
+        type: "game:start",
+        payload: { code: room.code }
+      },
+      "Unable to start rematch. Check server connection and try again."
+    );
   };
 
   const exitRoom = () => {
     if (room) {
-      sendEvent({
-        type: "room:leave",
-        payload: { code: room.code }
-      });
+      sendEventWithFeedback(
+        {
+          type: "room:leave",
+          payload: { code: room.code }
+        },
+        "Could not notify server. Exiting locally."
+      );
     }
     clearSession();
     setRoom(null);
@@ -529,7 +561,11 @@ export default function AnagramDuelApp() {
                     </button>
                   ))}
                 </div>
-                <button onClick={createRoom} className="pill mt-4 w-full pill-primary">
+                <button
+                  onClick={createRoom}
+                  disabled={connectionState !== "online"}
+                  className="pill mt-4 w-full pill-primary disabled:cursor-not-allowed disabled:opacity-50"
+                >
                   Create Room
                 </button>
               </div>
@@ -543,7 +579,11 @@ export default function AnagramDuelApp() {
                   placeholder="6-digit code"
                   className="mt-3 w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm tracking-[0.22em] outline-none ring-slate-300 transition focus:ring-2"
                 />
-                <button onClick={joinRoom} className="pill mt-3 w-full pill-secondary">
+                <button
+                  onClick={joinRoom}
+                  disabled={connectionState !== "online"}
+                  className="pill mt-3 w-full pill-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                >
                   Join Room
                 </button>
               </div>
@@ -605,7 +645,7 @@ export default function AnagramDuelApp() {
               {canStart
                 ? "Both players are ready. You can start the round."
                 : room.players.length < 2 || room.players.some((player) => !player.connected)
-                  ? "Waiting for both players to connect. Open another device/tab and join this code."
+                  ? "Waiting for both players to connect. Use this code to join from another device."
                   : "Waiting for the host to start the round."}
             </p>
           </motion.section>
