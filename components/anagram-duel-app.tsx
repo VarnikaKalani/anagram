@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { pointsForLength } from "../lib/scoring";
 import { getWsUrl } from "../lib/ws";
-import type { ClientEvent, RoomState, ServerEvent, YouState } from "../shared/types";
+import type { ClientEvent, DifficultyMode, RoomState, ServerEvent, YouState } from "../shared/types";
 
 type ConnectionState = "connecting" | "online" | "offline";
 type ToastKind = "success" | "error" | "info";
@@ -23,6 +23,11 @@ interface ReconnectSession {
 
 const SESSION_KEY = "anagram_arena_session";
 const PLAYER_NAME_KEY = "anagram_arena_name";
+const DIFFICULTY_LABELS: Record<DifficultyMode, string> = {
+  easy: "Easy",
+  medium: "Medium",
+  hard: "Hard"
+};
 
 export default function AnagramDuelApp() {
   const wsRef = useRef<WebSocket | null>(null);
@@ -34,6 +39,7 @@ export default function AnagramDuelApp() {
   const [room, setRoom] = useState<RoomState | null>(null);
   const [you, setYou] = useState<YouState | null>(null);
   const [nameInput, setNameInput] = useState("Player 1");
+  const [selectedMode, setSelectedMode] = useState<DifficultyMode>("medium");
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -355,7 +361,7 @@ export default function AnagramDuelApp() {
     window.localStorage.setItem(PLAYER_NAME_KEY, cleanName);
     sendEvent({
       type: "room:create",
-      payload: { name: cleanName }
+      payload: { name: cleanName, mode: selectedMode }
     });
   };
 
@@ -509,6 +515,20 @@ export default function AnagramDuelApp() {
               <div className="rounded-xl border border-slate-300 bg-white p-4">
                 <h3 className="font-heading text-xl font-semibold text-slate-900">Create Room</h3>
                 <p className="mt-1 text-sm text-slate-600">Generate a 6-digit code instantly.</p>
+                <div className="mt-3 inline-flex rounded-xl border border-slate-300 bg-slate-50 p-1">
+                  {(Object.keys(DIFFICULTY_LABELS) as DifficultyMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setSelectedMode(mode)}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] transition ${
+                        selectedMode === mode ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      {DIFFICULTY_LABELS[mode]}
+                    </button>
+                  ))}
+                </div>
                 <button onClick={createRoom} className="pill mt-4 w-full pill-primary">
                   Create Room
                 </button>
@@ -543,6 +563,7 @@ export default function AnagramDuelApp() {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Room Code</p>
                 <p className="font-heading text-4xl font-semibold tracking-[0.16em] text-slate-900">{room.code}</p>
+                <p className="mt-1 text-xs uppercase tracking-[0.12em] text-slate-500">Mode: {DIFFICULTY_LABELS[room.mode]}</p>
               </div>
               <button onClick={copyCode} className="pill pill-secondary">
                 Copy Code
@@ -603,6 +624,7 @@ export default function AnagramDuelApp() {
                 <div className="rounded-xl border border-slate-300 bg-white px-4 py-2">
                   <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Room</p>
                   <p className="font-heading text-lg font-semibold tracking-[0.12em] text-slate-900">{room.code}</p>
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">{DIFFICULTY_LABELS[room.mode]}</p>
                 </div>
                 <div className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2">
                   <StatusDot state={connectionState} />

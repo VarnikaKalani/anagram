@@ -1,4 +1,5 @@
 export type RoomStatus = "waiting" | "ready" | "playing" | "finished";
+export type DifficultyMode = "easy" | "medium" | "hard";
 
 export interface WordEntry {
   text: string;
@@ -18,6 +19,7 @@ export interface PublicPlayer {
 export interface RoomState {
   code: string;
   status: RoomStatus;
+  mode: DifficultyMode;
   hostId: string;
   players: PublicPlayer[];
   letters: string[];
@@ -61,6 +63,7 @@ export type ClientEvent =
       type: "room:create";
       payload: {
         name: string;
+        mode?: DifficultyMode;
       };
     }
   | {

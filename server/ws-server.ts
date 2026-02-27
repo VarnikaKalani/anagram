@@ -3,6 +3,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import type {
   ClientEvent,
+  DifficultyMode,
   PublicPlayer,
   RoomState,
   RoomStatus,
@@ -10,7 +11,7 @@ import type {
   SubmitErrorCode,
   WordEntry
 } from "../shared/types";
-import { loadDictionary } from "./dictionary";
+import { loadWordLists } from "./dictionary";
 import { canBuildFromLetters, generateRound, scoreForWord } from "./game-engine";
 
 const PORT = Number(process.env.WS_PORT ?? 8080);
@@ -35,6 +36,7 @@ interface PlayerInternal {
 interface RoomInternal {
   code: string;
   status: RoomStatus;
+  mode: DifficultyMode;
   hostPlayerId: string;
   players: PlayerInternal[];
   letters: string[];
@@ -57,7 +59,7 @@ interface SocketContext {
 
 const rooms = new Map<string, RoomInternal>();
 const socketContexts = new Map<WebSocket, SocketContext>();
-const dictionary = loadDictionary();
+const { allWords: dictionary, commonWords: commonDictionary } = loadWordLists();
 
 const httpServer = createServer((_req, res) => {
   res.writeHead(200, { "content-type": "text/plain" });
@@ -78,7 +80,7 @@ wss.on("connection", (ws) => {
 
     switch (message.type) {
       case "room:create":
-        handleRoomCreate(ws, message.payload.name);
+        handleRoomCreate(ws, message.payload.name, message.payload.mode);
         break;
       case "room:join":
         handleRoomJoin(ws, message.payload.code, message.payload.name, message.payload.reconnectToken);
@@ -111,6 +113,8 @@ httpServer.listen(PORT, () => {
   console.log(`[ws] Listening on ws://localhost:${PORT}`);
   // eslint-disable-next-line no-console
   console.log(`[ws] Loaded dictionary words: ${dictionary.size}`);
+  // eslint-disable-next-line no-console
+  console.log(`[ws] Loaded common words: ${commonDictionary.size}`);
 });
 
 setInterval(() => {
@@ -123,18 +127,20 @@ setInterval(() => {
   }
 }, 60_000);
 
-function handleRoomCreate(ws: WebSocket, rawName: string): void {
+function handleRoomCreate(ws: WebSocket, rawName: string, rawMode?: DifficultyMode): void {
   const name = sanitizeName(rawName);
   if (!name) {
     sendServerError(ws, "NAME_REQUIRED", "Please enter a player name.");
     return;
   }
+  const mode = normalizeMode(rawMode);
 
   const code = generateRoomCode();
   const player = createPlayer(name, ws);
   const room: RoomInternal = {
     code,
     status: "waiting",
+    mode,
     hostPlayerId: player.id,
     players: [player],
     letters: [],
@@ -437,7 +443,7 @@ function handleSocketClose(ws: WebSocket): void {
 function startRound(room: RoomInternal): void {
   clearRoomTimers(room);
 
-  const { letters, validWords } = generateRound(dictionary, 15);
+  const { letters, validWords } = generateRound(dictionary, commonDictionary, room.mode);
   room.letters = letters;
   room.allValidWords = validWords;
   room.foundGlobal = new Set();
@@ -455,7 +461,7 @@ function startRound(room: RoomInternal): void {
     player.submitTimestamps = [];
   }
 
-  emitRoomState(room, "Round started.");
+  emitRoomState(room, `Round started (${room.mode}).`);
 
   room.roundTimeout = setTimeout(() => {
     if (room.status === "playing") {
@@ -563,6 +569,7 @@ function toPublicRoom(room: RoomInternal): RoomState {
   return {
     code: room.code,
     status: room.status,
+    mode: room.mode,
     hostId: room.hostPlayerId,
     players,
     letters: room.letters,
@@ -635,6 +642,13 @@ function normalizeRoomCode(input: string): string | null {
 function sanitizeName(input: string): string {
   const name = input.trim().slice(0, 24);
   return name;
+}
+
+function normalizeMode(input?: DifficultyMode): DifficultyMode {
+  if (input === "easy" || input === "medium" || input === "hard") {
+    return input;
+  }
+  return "medium";
 }
 
 function generateRoomCode(): string {
