@@ -133,7 +133,7 @@ export async function joinRoomSession(
     return fail("BAD_CODE", "Enter a valid 6-digit room code.");
   }
 
-  const room = await getRoomByCode(code);
+  const room = await getRoomByCodeWithRetry(code);
   if (!room) {
     return fail("ROOM_NOT_FOUND", "Room not found.");
   }
@@ -508,10 +508,27 @@ function createPlayer(name: string): PlayerInternal {
 async function getRoomByCode(code: string): Promise<RoomInternal | null> {
   const admin = getSupabaseAdmin();
   const { data, error } = await admin.from("rooms").select("*").eq("code", code).maybeSingle<RoomRow>();
-  if (error || !data) {
+  if (error) {
+    throw new Error(`Supabase query failed: ${error.message}`);
+  }
+  if (!data) {
     return null;
   }
   return fromRow(data);
+}
+
+async function getRoomByCodeWithRetry(code: string): Promise<RoomInternal | null> {
+  const attempts = 4;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const room = await getRoomByCode(code);
+    if (room) {
+      return room;
+    }
+    if (attempt < attempts - 1) {
+      await wait(180);
+    }
+  }
+  return null;
 }
 
 async function saveRoom(room: RoomInternal): Promise<void> {
@@ -606,4 +623,8 @@ function ok<T>(data: T): ServiceResult<T> {
 
 function fail<T>(errorCode: SubmitErrorCode | "UNKNOWN", message: string): ServiceResult<T> {
   return { error: { errorCode, message } };
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
