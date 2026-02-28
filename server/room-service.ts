@@ -431,7 +431,10 @@ export async function leaveRoomSession(rawCode: string, playerId: string): Promi
 
   if (room.players.every((entry) => !entry.connected)) {
     const admin = getSupabaseAdmin();
-    await admin.from("rooms").delete().eq("code", room.code);
+    const { error } = await admin.from("rooms").delete().eq("code", room.code);
+    if (error) {
+      throw new Error(`Supabase delete failed: ${error.message}`);
+    }
     return ok({ ok: true });
   }
 
@@ -534,7 +537,15 @@ async function getRoomByCodeWithRetry(code: string): Promise<RoomInternal | null
 async function saveRoom(room: RoomInternal): Promise<void> {
   const admin = getSupabaseAdmin();
   room.updatedAt = Date.now();
-  await admin.from("rooms").update(toRow(room)).eq("code", room.code);
+  const { data, error } = await admin.from("rooms").update(toRow(room)).eq("code", room.code).select("*").maybeSingle<RoomRow>();
+  if (error) {
+    throw new Error(`Supabase update failed: ${error.message}`);
+  }
+  if (!data) {
+    throw new Error("Supabase update failed: room row not found.");
+  }
+  const refreshed = fromRow(data);
+  Object.assign(room, refreshed);
 }
 
 function fromRow(row: RoomRow): RoomInternal {
