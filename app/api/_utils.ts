@@ -11,3 +11,10 @@ export function ok<T>(data: T) {
 export function fail<T = never>(errorCode: string, message: string, status = 400) {
   return NextResponse.json<ApiResponse<T>>({ ok: false, errorCode: errorCode as any, message }, { status });
 }
+
+export function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+}

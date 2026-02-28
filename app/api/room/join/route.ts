@@ -1,4 +1,4 @@
-import { fail, ok } from "../../_utils";
+import { fail, getErrorMessage, ok } from "../../_utils";
 import { joinRoomSession } from "../../../../server/room-service";
 
 export async function POST(request: Request) {
@@ -9,7 +9,7 @@ export async function POST(request: Request) {
       return fail(result.error.errorCode, result.error.message, 400);
     }
     return ok(result.data);
-  } catch {
-    return fail("UNKNOWN", "Could not join room.", 500);
+  } catch (error) {
+    return fail("UNKNOWN", getErrorMessage(error, "Could not join room."), 500);
   }
 }

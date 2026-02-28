@@ -1,4 +1,4 @@
-import { fail, ok } from "../../_utils";
+import { fail, getErrorMessage, ok } from "../../_utils";
 import { createRoomSession } from "../../../../server/room-service";
 import type { DifficultyMode } from "../../../../shared/types";
 
@@ -10,7 +10,7 @@ export async function POST(request: Request) {
       return fail(result.error.errorCode, result.error.message, 400);
     }
     return ok(result.data);
-  } catch {
-    return fail("UNKNOWN", "Could not create room.", 500);
+  } catch (error) {
+    return fail("UNKNOWN", getErrorMessage(error, "Could not create room."), 500);
   }
 }

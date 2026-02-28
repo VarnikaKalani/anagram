@@ -1,4 +1,4 @@
-import { fail, ok } from "../../_utils";
+import { fail, getErrorMessage, ok } from "../../_utils";
 import { getRoomStateSession } from "../../../../server/room-service";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
       return fail(result.error.errorCode, result.error.message, 400);
     }
     return ok(result.data);
-  } catch {
-    return fail("UNKNOWN", "Could not fetch room state.", 500);
+  } catch (error) {
+    return fail("UNKNOWN", getErrorMessage(error, "Could not fetch room state."), 500);
   }
 }
