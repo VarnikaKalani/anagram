@@ -563,8 +563,7 @@ export default function AnagramDuelApp() {
                 </div>
                 <button
                   onClick={createRoom}
-                  disabled={connectionState !== "online"}
-                  className="pill mt-4 w-full pill-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  className="pill mt-4 w-full pill-primary"
                 >
                   Create Room
                 </button>
@@ -581,8 +580,7 @@ export default function AnagramDuelApp() {
                 />
                 <button
                   onClick={joinRoom}
-                  disabled={connectionState !== "online"}
-                  className="pill mt-3 w-full pill-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                  className="pill mt-3 w-full pill-secondary"
                 >
                   Join Room
                 </button>
