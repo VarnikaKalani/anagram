@@ -14,7 +14,7 @@ import type {
 import { loadWordLists } from "./dictionary";
 import { canBuildFromLetters, generateRound, scoreForWord } from "./game-engine";
 
-const PORT = Number(process.env.WS_PORT ?? 8080);
+const PORT = Number(process.env.WS_PORT ?? process.env.PORT ?? 8080);
 const ROUND_DURATION_SECONDS = 60;
 const RECONNECT_GRACE_MS = 15_000;
 const RATE_WINDOW_MS = 2_000;
