@@ -1,10 +1,16 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { pointsForLength } from "../lib/scoring";
-import { getWsUrl } from "../lib/ws";
-import type { ClientEvent, DifficultyMode, RoomState, ServerEvent, YouState } from "../shared/types";
+import type {
+  ApiResponse,
+  DifficultyMode,
+  RoomState,
+  RoomStatePayload,
+  WordSubmitPayload,
+  YouState
+} from "../shared/types";
 
 type ConnectionState = "connecting" | "online" | "offline";
 type ToastKind = "success" | "error" | "info";
@@ -18,6 +24,7 @@ interface ToastState {
 interface ReconnectSession {
   code: string;
   name: string;
+  playerId: string;
   reconnectToken: string;
 }
 
@@ -30,12 +37,7 @@ const DIFFICULTY_LABELS: Record<DifficultyMode, string> = {
 };
 
 export default function AnagramDuelApp() {
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimerRef = useRef<number | null>(null);
-  const isMountedRef = useRef(true);
-  const handleServerEventRef = useRef<(event: ServerEvent) => void>(() => undefined);
-
-  const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
+  const [connectionState, setConnectionState] = useState<ConnectionState>("online");
   const [room, setRoom] = useState<RoomState | null>(null);
   const [you, setYou] = useState<YouState | null>(null);
   const [nameInput, setNameInput] = useState("Player 1");
@@ -129,150 +131,98 @@ export default function AnagramDuelApp() {
     window.localStorage.removeItem(SESSION_KEY);
   }, []);
 
-  const sendEvent = useCallback((event: ClientEvent) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      return false;
+  const applyRoomPayload = useCallback(
+    (payload: RoomStatePayload, showNotice = true) => {
+      setRoom(payload.room);
+      setYou(payload.you);
+      setClockOffsetMs(payload.serverNow - Date.now());
+      persistSession({
+        code: payload.room.code,
+        name: payload.you.name,
+        playerId: payload.you.id,
+        reconnectToken: payload.you.reconnectToken
+      });
+      if (showNotice && payload.notice) {
+        pushToast(payload.notice, "info");
+      }
+      if (payload.room.status !== "playing") {
+        setSelectedIndices([]);
+      }
+      if (payload.room.status === "finished") {
+        if (payload.allValidWords) {
+          setRoundAllValidWords(payload.allValidWords);
+        }
+      } else {
+        setRoundAllValidWords([]);
+      }
+    },
+    [persistSession, pushToast]
+  );
+
+  const requestApi = useCallback(async <T,>(path: string, init?: RequestInit): Promise<ApiResponse<T>> => {
+    try {
+      const response = await fetch(path, {
+        ...init,
+        headers: {
+          "content-type": "application/json",
+          ...(init?.headers ?? {})
+        }
+      });
+      const parsed = (await response.json()) as ApiResponse<T>;
+      if (parsed.ok) {
+        setConnectionState("online");
+        return parsed;
+      }
+      setConnectionState(response.status >= 500 ? "offline" : "online");
+      return parsed;
+    } catch {
+      setConnectionState("offline");
+      return {
+        ok: false,
+        errorCode: "UNKNOWN",
+        message: "Unable to reach server. Please try again."
+      };
     }
-    wsRef.current.send(JSON.stringify(event));
-    return true;
   }, []);
 
-  const sendEventWithFeedback = useCallback(
-    (event: ClientEvent, fallbackMessage = "Unable to reach game server. Please try again.") => {
-      const sent = sendEvent(event);
-      if (!sent) {
-        pushToast(fallbackMessage, "error");
+  const pollRoomState = useCallback(
+    async (quiet = true) => {
+      if (!room || !you) return;
+      const query = new URLSearchParams({
+        code: room.code,
+        playerId: you.id,
+        reconnectToken: you.reconnectToken
+      });
+      const result = await requestApi<RoomStatePayload>(`/api/room/state?${query.toString()}`);
+      if (!result.ok) {
+        if (result.errorCode === "ROOM_NOT_FOUND") {
+          clearSession();
+          setRoom(null);
+          setYou(null);
+          setRoundAllValidWords([]);
+          if (!quiet) {
+            pushToast("Room not found.", "error");
+          }
+        } else if (!quiet) {
+          pushToast(result.message, "error");
+        }
+        return;
       }
-      return sent;
-    },
-    [pushToast, sendEvent]
-  );
 
-  const handleServerEvent = useCallback(
-    (event: ServerEvent) => {
-      switch (event.type) {
-        case "room:state": {
-          setRoom(event.payload.room);
-          setYou(event.payload.you);
-          setClockOffsetMs(event.payload.serverNow - Date.now());
-          if (event.payload.notice) {
-            pushToast(event.payload.notice, "info");
-          }
-          persistSession({
-            code: event.payload.room.code,
-            name: event.payload.you.name,
-            reconnectToken: event.payload.you.reconnectToken
-          });
-          if (event.payload.room.status !== "playing") {
-            setSelectedIndices([]);
-          }
-          if (event.payload.room.status !== "finished") {
-            setRoundAllValidWords([]);
-          }
-          return;
-        }
-        case "word:result": {
-          if (event.payload.ok) {
-            setSelectedIndices([]);
-            triggerBurst();
-            playSuccessTone();
-            pushToast(`${event.payload.word.toUpperCase()} accepted (+${event.payload.points ?? 0})`, "success");
-          } else {
-            setSelectedIndices([]);
-            pushToast(event.payload.message, "error");
-          }
-          return;
-        }
-        case "game:tick": {
-          setClockOffsetMs(event.payload.serverNow - Date.now());
-          return;
-        }
-        case "game:end": {
-          setRoom(event.payload.room);
-          setClockOffsetMs(event.payload.serverNow - Date.now());
-          setSelectedIndices([]);
-          setRoundAllValidWords(event.payload.allValidWords);
-          if (event.payload.reason === "all_words_found") {
-            pushToast("Round ended early: all valid words were found.", "info");
-          } else if (event.payload.reason === "disconnect_timeout") {
-            pushToast("Round ended: opponent did not reconnect in time.", "error");
-          } else {
-            pushToast("Time is up.", "info");
-          }
-          return;
-        }
-        case "server:error": {
-          pushToast(event.payload.message, "error");
-          if (event.payload.errorCode === "ROOM_NOT_FOUND") {
-            clearSession();
-            setRoom(null);
-            setYou(null);
-          }
-          return;
+      const previousStatus = room.status;
+      applyRoomPayload(result.data, false);
+      if (previousStatus !== "finished" && result.data.room.status === "finished") {
+        if (result.data.endReason === "all_words_found") {
+          pushToast("Round ended early: all valid words were found.", "info");
+        } else if (result.data.endReason === "disconnect_timeout") {
+          pushToast("Round ended: opponent did not reconnect in time.", "error");
+        } else {
+          pushToast("Time is up.", "info");
         }
       }
     },
-    [clearSession, persistSession, playSuccessTone, pushToast, triggerBurst]
+    [applyRoomPayload, clearSession, pushToast, requestApi, room, you]
   );
-
-  useEffect(() => {
-    handleServerEventRef.current = handleServerEvent;
-  }, [handleServerEvent]);
-
-  const connectSocket = useCallback(() => {
-    if (
-      wsRef.current &&
-      (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)
-    ) {
-      return;
-    }
-
-    setConnectionState("connecting");
-    const ws = new WebSocket(getWsUrl());
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setConnectionState("online");
-      const rawSession = window.sessionStorage.getItem(SESSION_KEY);
-      if (!rawSession) return;
-      try {
-        const session = JSON.parse(rawSession) as ReconnectSession;
-        ws.send(
-          JSON.stringify({
-            type: "room:join",
-            payload: {
-              code: session.code,
-              name: session.name,
-              reconnectToken: session.reconnectToken
-            }
-          } satisfies ClientEvent)
-        );
-      } catch {
-        clearSession();
-      }
-    };
-
-    ws.onmessage = (messageEvent) => {
-      try {
-        const parsed = JSON.parse(String(messageEvent.data)) as ServerEvent;
-        handleServerEventRef.current(parsed);
-      } catch {
-        pushToast("Received malformed server message.", "error");
-      }
-    };
-
-    ws.onerror = () => {
-      setConnectionState("offline");
-    };
-
-    ws.onclose = () => {
-      setConnectionState("offline");
-      if (!isMountedRef.current) return;
-      reconnectTimerRef.current = window.setTimeout(() => {
-        connectSocket();
-      }, 1000);
-    };
-  }, [clearSession, pushToast]);
 
   useEffect(() => {
     // Drop legacy shared session key from localStorage to avoid cross-tab identity collisions.
@@ -282,18 +232,44 @@ export default function AnagramDuelApp() {
       setNameInput(storedName.slice(0, 24));
     }
 
-    connectSocket();
-    const ticker = window.setInterval(() => setNowMs(Date.now()), 120);
-
-    return () => {
-      isMountedRef.current = false;
-      window.clearInterval(ticker);
-      if (reconnectTimerRef.current !== null) {
-        window.clearTimeout(reconnectTimerRef.current);
+    const rawSession = window.sessionStorage.getItem(SESSION_KEY);
+    if (rawSession) {
+      try {
+        const session = JSON.parse(rawSession) as ReconnectSession;
+        setConnectionState("connecting");
+        void requestApi<RoomStatePayload>(
+          `/api/room/state?${new URLSearchParams({
+            code: session.code,
+            playerId: session.playerId,
+            reconnectToken: session.reconnectToken
+          }).toString()}`
+        ).then((result) => {
+          if (!result.ok) {
+            clearSession();
+            setRoom(null);
+            setYou(null);
+            return;
+          }
+          applyRoomPayload(result.data, false);
+        });
+      } catch {
+        clearSession();
       }
-      wsRef.current?.close();
-    };
-  }, [connectSocket]);
+    }
+
+    const ticker = window.setInterval(() => setNowMs(Date.now()), 120);
+    return () => window.clearInterval(ticker);
+  }, [applyRoomPayload, clearSession, requestApi]);
+
+  useEffect(() => {
+    if (!room || !you) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void pollRoomState(true);
+    }, 700);
+    return () => window.clearInterval(timer);
+  }, [pollRoomState, room, you]);
 
   useEffect(() => {
     if (!toast) return;
@@ -310,6 +286,56 @@ export default function AnagramDuelApp() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [showRulesModal]);
+
+  const submitCurrentWord = useCallback(
+    async (rawWord: string) => {
+      if (!room || !you) return;
+      const result = await requestApi<WordSubmitPayload>("/api/word/submit", {
+        method: "POST",
+        body: JSON.stringify({
+          code: room.code,
+          playerId: you.id,
+          word: rawWord
+        })
+      });
+      if (!result.ok) {
+        pushToast(result.message, "error");
+        return;
+      }
+
+      applyRoomPayload(
+        {
+          room: result.data.room,
+          you: result.data.you,
+          serverNow: result.data.serverNow,
+          allValidWords: result.data.allValidWords,
+          endReason: result.data.endReason
+        },
+        false
+      );
+
+      setSelectedIndices([]);
+      if (result.data.wordResult.ok) {
+        triggerBurst();
+        playSuccessTone();
+        pushToast(
+          `${result.data.wordResult.word.toUpperCase()} accepted (+${result.data.wordResult.points ?? 0})`,
+          "success"
+        );
+      } else {
+        pushToast(result.data.wordResult.message, "error");
+      }
+
+      if (result.data.endReason === "all_words_found") {
+        pushToast("Round ended early: all valid words were found.", "info");
+      } else if (result.data.endReason === "disconnect_timeout") {
+        pushToast("Round ended: opponent did not reconnect in time.", "error");
+      } else if (result.data.endReason === "time_up") {
+        pushToast("Time is up.", "info");
+      }
+    },
+    [applyRoomPayload, playSuccessTone, pushToast, requestApi, room, triggerBurst, you]
+  );
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -328,16 +354,7 @@ export default function AnagramDuelApp() {
           pushToast("You already found that word.", "error");
           return;
         }
-        sendEventWithFeedback(
-          {
-            type: "word:submit",
-            payload: {
-              code: room.code,
-              word
-            }
-          },
-          "Unable to submit word. Check server connection and try again."
-        );
+        void submitCurrentWord(word);
         return;
       }
 
@@ -364,25 +381,28 @@ export default function AnagramDuelApp() {
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [myPlayer, pushToast, room, selectedIndices, sendEventWithFeedback]);
+  }, [myPlayer, pushToast, room, selectedIndices, submitCurrentWord]);
 
-  const createRoom = () => {
+  const createRoom = async () => {
     const cleanName = nameInput.trim().slice(0, 24);
     if (!cleanName) {
       pushToast("Enter your name first.", "error");
       return;
     }
     window.localStorage.setItem(PLAYER_NAME_KEY, cleanName);
-    sendEventWithFeedback(
-      {
-        type: "room:create",
-        payload: { name: cleanName, mode: selectedMode }
-      },
-      "Unable to create room. Check server connection and try again."
-    );
+    setConnectionState("connecting");
+    const result = await requestApi<RoomStatePayload>("/api/room/create", {
+      method: "POST",
+      body: JSON.stringify({ name: cleanName, mode: selectedMode })
+    });
+    if (!result.ok) {
+      pushToast(result.message, "error");
+      return;
+    }
+    applyRoomPayload(result.data);
   };
 
-  const joinRoom = () => {
+  const joinRoom = async () => {
     const cleanName = nameInput.trim().slice(0, 24);
     const cleanCode = joinCodeInput.replace(/\D/g, "").slice(0, 6);
     if (!cleanName) {
@@ -394,28 +414,37 @@ export default function AnagramDuelApp() {
       return;
     }
     window.localStorage.setItem(PLAYER_NAME_KEY, cleanName);
-    sendEventWithFeedback(
-      {
-        type: "room:join",
-        payload: {
-          code: cleanCode,
-          name: cleanName
-        }
-      },
-      "Unable to join room. Check server connection and try again."
-    );
+    setConnectionState("connecting");
+    const result = await requestApi<RoomStatePayload>("/api/room/join", {
+      method: "POST",
+      body: JSON.stringify({
+        code: cleanCode,
+        name: cleanName
+      })
+    });
+    if (!result.ok) {
+      pushToast(result.message, "error");
+      return;
+    }
+    applyRoomPayload(result.data);
   };
 
-  const startRound = () => {
-    if (!room) return;
-    sendEventWithFeedback(
-      {
-        type: "game:start",
-        payload: { code: room.code }
-      },
-      "Unable to start round. Check server connection and try again."
-    );
-  };
+  const startRound = useCallback(async () => {
+    if (!room || !you) return;
+    setConnectionState("connecting");
+    const result = await requestApi<RoomStatePayload>("/api/game/start", {
+      method: "POST",
+      body: JSON.stringify({
+        code: room.code,
+        playerId: you.id
+      })
+    });
+    if (!result.ok) {
+      pushToast(result.message, "error");
+      return;
+    }
+    applyRoomPayload(result.data);
+  }, [applyRoomPayload, pushToast, requestApi, room, you]);
 
   const tapLetter = (index: number) => {
     if (!room || room.status !== "playing") return;
@@ -444,16 +473,7 @@ export default function AnagramDuelApp() {
       pushToast("You already found that word.", "error");
       return;
     }
-    sendEventWithFeedback(
-      {
-        type: "word:submit",
-        payload: {
-          code: room.code,
-          word
-        }
-      },
-      "Unable to submit word. Check server connection and try again."
-    );
+    void submitCurrentWord(word);
   };
 
   const copyCode = async () => {
@@ -467,25 +487,18 @@ export default function AnagramDuelApp() {
   };
 
   const rematch = () => {
-    if (!room) return;
-    sendEventWithFeedback(
-      {
-        type: "game:start",
-        payload: { code: room.code }
-      },
-      "Unable to start rematch. Check server connection and try again."
-    );
+    void startRound();
   };
 
-  const exitRoom = () => {
-    if (room) {
-      sendEventWithFeedback(
-        {
-          type: "room:leave",
-          payload: { code: room.code }
-        },
-        "Could not notify server. Exiting locally."
-      );
+  const exitRoom = async () => {
+    if (room && you) {
+      await requestApi<{ ok: true }>("/api/room/leave", {
+        method: "POST",
+        body: JSON.stringify({
+          code: room.code,
+          playerId: you.id
+        })
+      });
     }
     clearSession();
     setRoom(null);
@@ -539,7 +552,7 @@ export default function AnagramDuelApp() {
               </div>
               <div className="flex items-center gap-2 text-xs text-slate-500">
                 <StatusDot state={connectionState} />
-                Socket: {connectionLabel}
+                Server: {connectionLabel}
               </div>
             </div>
 

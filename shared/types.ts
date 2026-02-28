@@ -56,6 +56,36 @@ export interface RoomStatePayload {
   you: YouState;
   serverNow: number;
   notice?: string;
+  allValidWords?: string[];
+  endReason?: "time_up" | "all_words_found" | "disconnect_timeout";
+}
+
+export interface ApiErrorPayload {
+  ok: false;
+  errorCode: SubmitErrorCode | "UNKNOWN";
+  message: string;
+}
+
+export interface ApiSuccessPayload<T> {
+  ok: true;
+  data: T;
+}
+
+export type ApiResponse<T> = ApiErrorPayload | ApiSuccessPayload<T>;
+
+export interface WordSubmitPayload {
+  room: RoomState;
+  you: YouState;
+  serverNow: number;
+  wordResult: {
+    ok: boolean;
+    word: string;
+    points?: number;
+    errorCode?: SubmitErrorCode;
+    message: string;
+  };
+  allValidWords?: string[];
+  endReason?: "time_up" | "all_words_found" | "disconnect_timeout";
 }
 
 export type ClientEvent =

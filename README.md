@@ -3,7 +3,8 @@
 Minimalist, NYT-inspired real-time anagram duel built with:
 
 - Next.js (App Router) + TypeScript + Tailwind CSS
-- WebSocket game server (`ws`) with server-authoritative validation
+- Supabase (Postgres) for shared room state + persistence
+- Next.js API routes for server-authoritative validation
 - Framer Motion for subtle UI transitions
 
 ## Features
@@ -27,10 +28,12 @@ Minimalist, NYT-inspired real-time anagram duel built with:
 ## Project Structure
 
 - `app/` Next.js app router pages/layout
+- `app/api/` server routes used by the game client
 - `components/` UI + client game logic
-- `server/` standalone WebSocket server and game engine
+- `server/` game engine + Supabase room service logic
 - `shared/` shared event/model types
 - `data/words.txt` seeded dictionary (works out of the box)
+- `supabase/schema.sql` required table schema
 
 ## Local Run
 
@@ -40,45 +43,40 @@ Minimalist, NYT-inspired real-time anagram duel built with:
 npm install
 ```
 
-2. Run frontend + WebSocket server together:
+2. Configure environment:
 
 ```bash
-npm run dev:all
+cp .env.example .env.local
 ```
 
-3. Open:
+Set:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+3. Create the Supabase table:
+
+Run SQL from:
+
+```bash
+# supabase/schema.sql
+```
+
+4. Run the app:
+
+```bash
+npm run dev
+```
+
+5. Open:
 
 - Frontend: `http://localhost:3000`
-- WebSocket server: `ws://localhost:8080`
-
-If you run servers separately:
-
-```bash
-npm run dev      # Next.js
-npm run ws:dev   # WebSocket server
-```
-
-## Environment
-
-Optional:
-
-- `NEXT_PUBLIC_WS_URL` (defaults to `ws://<current-host>:8080`)
-- `WS_PORT` for WebSocket server (defaults to `8080`)
 
 ## Deployment Notes
 
-### Frontend (Vercel)
+Deploy only the Next.js project to Vercel and set:
 
-- Deploy Next.js app to Vercel.
-- Set `NEXT_PUBLIC_WS_URL` to your deployed WebSocket server URL (`wss://...`).
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
 
-### WebSocket Server
-
-- Deploy `server/ws-server.ts` to a Node host that supports long-lived WebSocket connections (Render, Fly.io, Railway, etc).
-- Run with:
-
-```bash
-npm run ws:start
-```
-
-Make sure `data/words.txt` is included in deployment.
+No separate WebSocket host is required in this setup.
