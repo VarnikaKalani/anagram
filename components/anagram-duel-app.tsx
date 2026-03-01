@@ -831,6 +831,14 @@ export default function AnagramDuelApp() {
               >
                 Rematch
               </button>
+              <button
+                onClick={() => {
+                  void exitRoom();
+                }}
+                className="pill pill-secondary rounded-xl px-6 py-3 text-base"
+              >
+                Exit to Home
+              </button>
             </div>
             {!isHost && <p className="mt-3 text-sm text-slate-600">Only the host can start a rematch.</p>}
           </motion.section>
