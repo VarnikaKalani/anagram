@@ -163,6 +163,7 @@ export default function AnagramDuelApp() {
     try {
       const response = await fetch(path, {
         ...init,
+        cache: "no-store",
         headers: {
           "content-type": "application/json",
           ...(init?.headers ?? {})
@@ -191,7 +192,8 @@ export default function AnagramDuelApp() {
       const query = new URLSearchParams({
         code: room.code,
         playerId: you.id,
-        reconnectToken: you.reconnectToken
+        reconnectToken: you.reconnectToken,
+        t: String(Date.now())
       });
       const result = await requestApi<RoomStatePayload>(`/api/room/state?${query.toString()}`);
       if (!result.ok) {
